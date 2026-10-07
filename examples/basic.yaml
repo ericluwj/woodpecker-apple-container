@@ -1,0 +1,12 @@
+labels:
+  backend: apple-container
+
+steps:
+  - name: build
+    image: alpine:3.22
+    commands:
+      - printf hello > artifact
+  - name: verify
+    image: alpine:3.22
+    commands:
+      - test "$(cat artifact)" = hello

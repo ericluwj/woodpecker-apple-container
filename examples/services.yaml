@@ -1,0 +1,17 @@
+labels:
+  backend: apple-container
+
+services:
+  - name: postgres
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: integration-only-password
+
+steps:
+  - name: query
+    image: postgres:17-alpine
+    environment:
+      PGPASSWORD: integration-only-password
+    commands:
+      - until pg_isready -h postgres -U postgres; do sleep 1; done
+      - psql -h postgres -U postgres -c 'SELECT 1'
