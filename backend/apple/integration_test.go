@@ -78,6 +78,36 @@ func integrationRun(t *testing.T, b *Backend, task string, s *types.Step) (strin
 	return string(data), state
 }
 
+func TestIntegrationRegistryMirrors(t *testing.T) {
+	raw := os.Getenv("APPLE_CONTAINER_TEST_REGISTRY_MIRRORS")
+	if raw == "" {
+		t.Skip("set APPLE_CONTAINER_TEST_REGISTRY_MIRRORS to test an approved Docker Hub cache")
+	}
+	mirrors, err := parseRegistryMirrors(raw)
+	if err != nil || mirrors["docker.io"] == "" || mirrors["docker.io"] == "docker.io" {
+		t.Fatal("test requires an explicit Docker Hub cache mapping")
+	}
+	t.Setenv("WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS", raw)
+	b := integrationBackend(t)
+	a := testStep("qualified", "docker.io/library/alpine:3.22")
+	a.Pull = true
+	a.Commands = []string{"printf cache-test > artifact", "printf 'mirror-qualified-ok\\n'"}
+	d := testStep("short", "alpine:3.22")
+	d.Commands = []string{`test "$(cat artifact)" = cache-test`, "printf 'mirror-short-ok\\n'"}
+	if err := b.SetupWorkflow(t.Context(), testConf(a, d), t.Name()); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []*types.Step{a, d} {
+		out, state := integrationRun(t, b, t.Name(), step)
+		if state.ExitCode != 0 || !strings.Contains(out, "mirror-"+step.Name+"-ok") {
+			t.Fatalf("state %+v output %s", state, out)
+		}
+	}
+	if err := b.DestroyWorkflow(t.Context(), nil, t.Name()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIntegrationSharedWorkspaceAndFastLogs(t *testing.T) {
 	b := integrationBackend(t)
 	t.Setenv("APPLE_TEST_HOST_ONLY", "must-not-reach-workload")

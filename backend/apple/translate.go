@@ -75,6 +75,10 @@ func validateStep(s *types.Step, conf *types.Config) error {
 }
 
 func (b *Backend) arguments(w *workflow, st *stepState, s *types.Step) ([]string, error) {
+	image, err := b.resolveImage(s.Image)
+	if err != nil {
+		return nil, err
+	}
 	args := []string{"run", "--progress", "none", "--platform", "linux/arm64", "--name", st.name,
 		"--label", ownerLabel + "=" + w.owner, "--label", "io.woodpecker.apple.workflow=" + w.task,
 		"--cpus", fmt.Sprint(b.config.cpus), "--memory", b.config.memory,
@@ -112,7 +116,7 @@ func (b *Backend) arguments(w *workflow, st *stepState, s *types.Step) ([]string
 	if len(entry) > 0 {
 		args = append(args, "--entrypoint", entry[0])
 	}
-	args = append(args, s.Image)
+	args = append(args, image)
 	if len(entry) > 1 {
 		args = append(args, entry[1:]...)
 	}

@@ -265,7 +265,12 @@ func (b *Backend) StartStep(ctx context.Context, step *types.Step, task string) 
 	startupCtx, startupCancel := context.WithTimeout(lifetime, b.config.startupTimeout)
 	defer startupCancel()
 	if step.Pull {
-		if _, err = b.runner.run(startupCtx, "image", "pull", "--progress", "none", "--platform", "linux/arm64", step.Image); err != nil {
+		image, resolveErr := b.resolveImage(step.Image)
+		if resolveErr != nil {
+			s.spool.close()
+			return resolveErr
+		}
+		if _, err = b.runner.run(startupCtx, "image", "pull", "--progress", "none", "--platform", "linux/arm64", image); err != nil {
 			s.spool.close()
 			return err
 		}

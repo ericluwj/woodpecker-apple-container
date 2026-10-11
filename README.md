@@ -57,6 +57,7 @@ macOS. Native macOS/Xcode builds require a different execution environment.
 | `--backend-apple-cpus` | `WOODPECKER_BACKEND_APPLE_CPUS` | `2` |
 | `--backend-apple-memory` | `WOODPECKER_BACKEND_APPLE_MEMORY` | `1G` (1 GiB) |
 | `--backend-apple-startup-timeout` | `WOODPECKER_BACKEND_APPLE_STARTUP_TIMEOUT` | `5m` |
+| `--backend-apple-registry-mirrors` | `WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS` | unset (direct pulls) |
 
 CPU and memory limits apply to **each step VM**, not to the entire workflow.
 Each workflow also uses one `coredns/coredns:1.14.7` VM with 1 CPU and 256 MiB.
@@ -64,6 +65,46 @@ The timeout covers workflow setup, image pulling, and individual step startup;
 running steps use Woodpecker's workflow timeout. The state directory must have
 mode `0700`; it is created privately when absent. Its path cannot contain comma,
 colon, or newline characters because Apple's mount syntax uses those delimiters.
+
+## Registry pull-through caches
+
+Administrators can opt into registry-host mappings without editing workflows:
+
+```sh
+export WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS='{"docker.io":"registry-docker-io.pi-xcels.com","registry.k8s.io":"registry-k8s-io.pi-xcels.com","gcr.io":"registry-gcr-io.pi-xcels.com","ghcr.io":"registry-ghcr-io.pi-xcels.com"}'
+```
+
+The value is a JSON object of source registry hosts to cache hosts, optionally
+with ports. Schemes, URL paths and embedded credentials are rejected. Apple's
+normal HTTPS transport is used; this option does not enable insecure HTTP/TLS.
+The cache must expose the same repository paths as its source registry.
+
+The backend maps short Docker Hub names (`alpine:3.22` becomes
+`registry-docker-io.pi-xcels.com/library/alpine:3.22`), namespaced names and
+fully qualified references. Tags and digests are preserved. The same resolution
+applies to forced pulls, cached-image startup, clone/plugin/service steps and
+the backend's own CoreDNS helper. Workflows keep their logical image references;
+unmapped registries and agents without this option keep their existing behavior.
+This is separate from Apple Container's default registry and from Colima/Docker
+configuration. It does not affect downloads or image builders inside a step VM.
+
+Mappings are administrator-controlled trust decisions, **not a private-image
+proxy**. Apple Container looks up Keychain credentials for the resulting cache
+host; the backend does not copy origin credentials or accept workflow registry
+credentials. A mapping applies to every repository on that source registry,
+including private images: do not enable it for a registry whose private images
+must use the original endpoint on that agent. Leave that registry unmapped, use
+an approved authenticated cache, or retain a separately configured agent for
+those consumers. Private-image Keychain access still needs noninteractive proof.
+
+There is deliberately **no automatic origin fallback or retry loop**. A failed
+cache pull fails startup under the existing startup timeout/cancellation budget;
+it must not silently bypass policy or recreate the original unreliable pull path.
+Cached-image reuse and `step.Pull` behavior are otherwise unchanged. Removing the
+mapping restores direct-origin behavior after a drained agent reload, but does
+not migrate cached images back to their original names. Preserve the prior binary,
+service definition, agent identity and secret during rollout; no global prune is
+needed. Test a candidate on one idle agent before rolling it out to the others.
 
 ## Workflow example
 
@@ -148,6 +189,24 @@ To run a subset:
 APPLE_CONTAINER_INTEGRATION=1 go test -race -tags=integration \
   -run TestIntegrationSharedWorkspaceAndFastLogs -v ./backend/apple
 ```
+
+To exercise Docker Hub cache resolution in real Apple VMs without changing
+global registry settings, supply the same opt-in mappings to the dedicated test:
+
+```sh
+APPLE_CONTAINER_INTEGRATION=1 \
+APPLE_CONTAINER_TEST_REGISTRY_MIRRORS='{"docker.io":"registry-docker-io.pi-xcels.com"}' \
+go test -race -tags=integration -timeout=10m \
+  -run '^TestIntegrationRegistryMirrors$' -v ./backend/apple
+```
+
+That test forces a mapped Alpine pull, uses the mapped DNS helper, and checks a
+shared workspace across qualified and short image names. It creates/cleans only
+its own workflow resources and retains images. Unit tests cover all four mappings,
+tags/digests, configuration validation, unchanged direct behavior, credentials,
+cache failure and cancellation. A successful real test can still reuse cached
+blobs: correlate manifest/blob requests with registry logs to prove cache use,
+and test approved public ARM64 images for other mapped registries before rollout.
 
 ## Cleanup and crash recovery
 

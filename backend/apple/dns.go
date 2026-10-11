@@ -11,6 +11,10 @@ import (
 )
 
 func (b *Backend) setupDNS(ctx context.Context, w *workflow) error {
+	image, err := b.resolveImage(dnsImage)
+	if err != nil {
+		return err
+	}
 	corefile := `.:53 {
     errors
     hosts /config/hosts {
@@ -30,7 +34,7 @@ func (b *Backend) setupDNS(ctx context.Context, w *workflow) error {
 	}
 	args := []string{"run", "--progress", "none", "--platform", "linux/arm64", "--detach", "--name", w.dnsName,
 		"--label", ownerLabel + "=" + w.owner, "--network", w.network, "--cpus", "1", "--memory", "256M",
-		"--mount", "type=bind,source=" + filepath.Join(w.dir, "dns") + ",target=/config,readonly", dnsImage, "-conf", "/config/Corefile"}
+		"--mount", "type=bind,source=" + filepath.Join(w.dir, "dns") + ",target=/config,readonly", image, "-conf", "/config/Corefile"}
 	if _, err := b.runner.run(ctx, args...); err != nil {
 		return fmt.Errorf("start workflow DNS helper: %w", err)
 	}

@@ -25,6 +25,8 @@ type config struct {
 	binary, stateDir, memory string
 	cpus                     int
 	startupTimeout           time.Duration
+	registryMirrorsJSON      string
+	registryMirrors          map[string]string
 }
 
 func defaultConfig() config {
@@ -45,6 +47,7 @@ func (*Backend) Flags() []cli.Flag {
 		&cli.IntFlag{Name: "backend-apple-cpus", Value: c.cpus, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_CPUS")},
 		&cli.StringFlag{Name: "backend-apple-memory", Value: c.memory, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_MEMORY")},
 		&cli.DurationFlag{Name: "backend-apple-startup-timeout", Value: c.startupTimeout, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_STARTUP_TIMEOUT")},
+		&cli.StringFlag{Name: "backend-apple-registry-mirrors", Usage: "JSON object mapping source registry hosts to HTTPS cache hosts (no origin fallback)", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS")},
 	}
 }
 
@@ -56,6 +59,7 @@ func configFromContext(ctx context.Context) config {
 		c.cpus = cmd.Int("backend-apple-cpus")
 		c.memory = cmd.String("backend-apple-memory")
 		c.startupTimeout = cmd.Duration("backend-apple-startup-timeout")
+		c.registryMirrorsJSON = cmd.String("backend-apple-registry-mirrors")
 	}
 	return c
 }
@@ -109,6 +113,11 @@ func (b *Backend) Load(ctx context.Context) (*types.BackendInfo, error) {
 		return nil, err
 	}
 	c := configFromContext(ctx)
+	var err error
+	c.registryMirrors, err = parseRegistryMirrors(c.registryMirrorsJSON)
+	if err != nil {
+		return nil, err
+	}
 	if c.cpus < 1 || c.startupTimeout <= 0 || !regexp.MustCompile(`^[1-9][0-9]*[KMGTP]?$`).MatchString(c.memory) {
 		return nil, fmt.Errorf("invalid CPU, memory, or startup timeout configuration")
 	}

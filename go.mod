@@ -3,6 +3,7 @@ module woodpecker-macos-container
 go 1.26.0
 
 require (
+	github.com/distribution/reference v0.6.0
 	github.com/urfave/cli/v3 v3.11.0
 	go.woodpecker-ci.org/woodpecker/v3 v3.18.1
 )
@@ -22,7 +23,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
-	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/cli v29.8.0+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.8.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
