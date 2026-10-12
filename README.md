@@ -4,7 +4,7 @@
 > development and evaluation. Do not rely on it for production CI workloads.
 
 A native macOS Woodpecker agent that executes **Linux ARM64** CI workloads in
-Apple container VMs. It embeds Woodpecker **3.18.1** and registers the backend
+Apple container VMs. It embeds Woodpecker **3.19.0** and registers the backend
 `apple-container` through the upstream custom-agent API.
 
 Each step has its own VM. Steps within a workflow share one workspace and one
@@ -16,9 +16,9 @@ concurrent workflows can both use `postgres` without a name collision.
 - Apple silicon Mac, macOS 26 or newer.
 - Apple [`container`](https://github.com/apple/container) **1.5.0**. This initial
   release checks that exact CLI version because it relies on its JSON shapes.
-- Go **1.26.0** or newer. Go's automatic toolchain download can supply 1.26.0
+- Go **1.27.0** or newer. Go's automatic toolchain download can supply 1.27.0
   when building with an older Go installation and `GOTOOLCHAIN=auto`.
-- A Woodpecker **3.18.1** server accessible over gRPC.
+- A Woodpecker **3.19.0** server accessible over gRPC.
 
 ```sh
 make build
@@ -183,7 +183,7 @@ custom networks, and removes only its own resources. It covers clone â†’ build â
 plugin execution, shared files, fast exits and log draining, service names,
 external DNS, concurrent workflows, cancellation, and startup timeouts.
 
-The server test starts Woodpecker 3.18.1's real in-process gRPC server, scheduler,
+The server test starts Woodpecker 3.19.0's real in-process gRPC server, scheduler,
 and migrated SQLite store, with a mocked forge. It builds and launches the actual
 agent executable and checks registration, platform selection, successful and
 failed workloads, and final server-side workflow results. The extra `test` build

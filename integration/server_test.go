@@ -76,7 +76,7 @@ func TestMatchingServerAndAgent(t *testing.T) {
 				}
 				for _, agent := range agents {
 					if agent.Backend == "apple-container" {
-						if agent.Version != "3.18.1" {
+						if agent.Version != "3.19.0" {
 							t.Fatalf("version %s", agent.Version)
 						}
 						if agent.Platform != "linux/arm64" {
