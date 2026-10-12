@@ -47,7 +47,7 @@ func (*Backend) Flags() []cli.Flag {
 		&cli.IntFlag{Name: "backend-apple-cpus", Value: c.cpus, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_CPUS")},
 		&cli.StringFlag{Name: "backend-apple-memory", Value: c.memory, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_MEMORY")},
 		&cli.DurationFlag{Name: "backend-apple-startup-timeout", Value: c.startupTimeout, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_STARTUP_TIMEOUT")},
-		&cli.StringFlag{Name: "backend-apple-registry-mirrors", Usage: "JSON object mapping source registry hosts to HTTPS cache hosts (no origin fallback)", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS")},
+		&cli.StringFlag{Name: "backend-apple-registry-mirrors", Usage: "JSON object mapping source registry hosts to HTTPS cache hosts (automatic origin fallback)", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS")},
 	}
 }
 

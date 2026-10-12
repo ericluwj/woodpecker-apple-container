@@ -11,7 +11,7 @@ import (
 )
 
 func (b *Backend) setupDNS(ctx context.Context, w *workflow) error {
-	image, err := b.resolveImage(dnsImage)
+	image, err := b.prepareImage(ctx, dnsImage, false)
 	if err != nil {
 		return err
 	}

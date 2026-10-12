@@ -88,19 +88,25 @@ unmapped registries and agents without this option keep their existing behavior.
 This is separate from Apple Container's default registry and from Colima/Docker
 configuration. It does not affect downloads or image builders inside a step VM.
 
-Mappings are administrator-controlled trust decisions, **not a private-image
-proxy**. Apple Container looks up Keychain credentials for the resulting cache
-host; the backend does not copy origin credentials or accept workflow registry
-credentials. A mapping applies to every repository on that source registry,
-including private images: do not enable it for a registry whose private images
-must use the original endpoint on that agent. Leave that registry unmapped, use
-an approved authenticated cache, or retain a separately configured agent for
-those consumers. Private-image Keychain access still needs noninteractive proof.
+Mappings apply to every repository on the source registry, including private
+images. Apple Container looks up Keychain credentials separately for the mirror
+or origin host being used; the backend does not copy credentials between hosts
+or accept workflow registry credentials. Private-image Keychain access still
+needs noninteractive proof.
 
-There is deliberately **no automatic origin fallback or retry loop**. A failed
-cache pull fails startup under the existing startup timeout/cancellation budget;
-it must not silently bypass policy or recreate the original unreliable pull path.
-Cached-image reuse and `step.Pull` behavior are otherwise unchanged. Removing the
+If a mirror pull fails, the backend **automatically falls back to the original
+registry once**, preserving the repository, tag and digest. For short Docker Hub
+names, the origin is explicitly qualified as `docker.io/library/...`. Both
+attempts share the existing startup timeout; cancellation or an exhausted timeout
+stops acquisition without another attempt. Agents must be able to reach the
+original registry for fallback to succeed.
+
+Without `step.Pull`, cached Linux ARM64 mirror images are reused; otherwise the
+backend pulls from the mirror before launching the VM. After a failed mirror
+pull, an available origin image is reused or pulled if absent. With `step.Pull`,
+each attempted source is pulled even when cached. Fallback applies to image
+acquisition for workload and DNS helper containers, never to VM startup errors or
+workload exit failures, so a failed job is not executed twice. Removing the
 mapping restores direct-origin behavior after a drained agent reload, but does
 not migrate cached images back to their original names. Preserve the prior binary,
 service definition, agent identity and secret during rollout; no global prune is
@@ -204,9 +210,17 @@ That test forces a mapped Alpine pull, uses the mapped DNS helper, and checks a
 shared workspace across qualified and short image names. It creates/cleans only
 its own workflow resources and retains images. Unit tests cover all four mappings,
 tags/digests, configuration validation, unchanged direct behavior, credentials,
-cache failure and cancellation. A successful real test can still reuse cached
-blobs: correlate manifest/blob requests with registry logs to prove cache use,
+origin fallback, cache failure and cancellation. A successful real test can still
+reuse cached blobs: correlate manifest/blob requests with registry logs to prove cache use,
 and test approved public ARM64 images for other mapped registries before rollout.
+
+To test origin fallback for the DNS helper, forced pulls and cached-image startup
+against a deliberately failing local mirror:
+
+```sh
+APPLE_CONTAINER_INTEGRATION=1 go test -race -tags=integration -timeout=10m \
+  -run '^TestIntegrationRegistryMirrorFallback$' -v ./backend/apple
+```
 
 ## Cleanup and crash recovery
 

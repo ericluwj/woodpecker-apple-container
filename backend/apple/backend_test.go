@@ -62,6 +62,10 @@ func (f *fakeRunner) run(ctx context.Context, args ...string) ([]byte, error) {
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, append([]string(nil), args...))
 	switch args[0] {
+	case "image":
+		if args[1] == "inspect" {
+			return []byte(`[{"variants":[{"platform":{"os":"linux","architecture":"arm64"}}]}]`), nil
+		}
 	case "network":
 		switch args[1] {
 		case "create":

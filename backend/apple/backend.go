@@ -257,23 +257,17 @@ func (b *Backend) StartStep(ctx context.Context, step *types.Step, task string) 
 		return err
 	}
 	s.spool = &logSpool{file: f}
-	args, err := b.arguments(w, s, step)
+	startupCtx, startupCancel := context.WithTimeout(lifetime, b.config.startupTimeout)
+	defer startupCancel()
+	image, err := b.prepareImage(startupCtx, step.Image, step.Pull)
 	if err != nil {
 		s.spool.close()
 		return err
 	}
-	startupCtx, startupCancel := context.WithTimeout(lifetime, b.config.startupTimeout)
-	defer startupCancel()
-	if step.Pull {
-		image, resolveErr := b.resolveImage(step.Image)
-		if resolveErr != nil {
-			s.spool.close()
-			return resolveErr
-		}
-		if _, err = b.runner.run(startupCtx, "image", "pull", "--progress", "none", "--platform", "linux/arm64", image); err != nil {
-			s.spool.close()
-			return err
-		}
+	args, err := b.arguments(w, s, step, image)
+	if err != nil {
+		s.spool.close()
+		return err
 	}
 	s.process, err = b.runner.start(lifetime, s.spool, args...)
 	if err != nil {

@@ -6,6 +6,8 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -100,6 +102,38 @@ func TestIntegrationRegistryMirrors(t *testing.T) {
 	for _, step := range []*types.Step{a, d} {
 		out, state := integrationRun(t, b, t.Name(), step)
 		if state.ExitCode != 0 || !strings.Contains(out, "mirror-"+step.Name+"-ok") {
+			t.Fatalf("state %+v output %s", state, out)
+		}
+	}
+	if err := b.DestroyWorkflow(t.Context(), nil, t.Name()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIntegrationRegistryMirrorFallback(t *testing.T) {
+	if os.Getenv("APPLE_CONTAINER_INTEGRATION") != "1" {
+		t.Skip("set APPLE_CONTAINER_INTEGRATION=1 to run VM tests")
+	}
+	// A fresh local endpoint has no cached images and rejects registry requests.
+	// Its untrusted TLS certificate also exercises transport-failure fallback.
+	mirror := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "mirror unavailable", http.StatusServiceUnavailable)
+	}))
+	defer mirror.Close()
+	host := strings.TrimPrefix(mirror.URL, "https://")
+	t.Setenv("WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS", `{"docker.io":"`+host+`"}`)
+	b := integrationBackend(t)
+	a := testStep("forced", "docker.io/library/alpine:3.22")
+	a.Pull = true
+	a.Commands = []string{"printf fallback > artifact", "echo origin-forced-ok"}
+	d := testStep("cached", "alpine:3.22")
+	d.Commands = []string{`test "$(cat artifact)" = fallback`, "echo origin-cached-ok"}
+	if err := b.SetupWorkflow(t.Context(), testConf(a, d), t.Name()); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []*types.Step{a, d} {
+		out, state := integrationRun(t, b, t.Name(), step)
+		if state.ExitCode != 0 || !strings.Contains(out, "origin-"+step.Name+"-ok") {
 			t.Fatalf("state %+v output %s", state, out)
 		}
 	}
