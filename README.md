@@ -56,11 +56,37 @@ macOS. Native macOS/Xcode builds require a different execution environment.
 | `--backend-apple-state-dir` | `WOODPECKER_BACKEND_APPLE_STATE_DIR` | `<os.UserCacheDir()>/woodpecker-apple` |
 | `--backend-apple-cpus` | `WOODPECKER_BACKEND_APPLE_CPUS` | `2` |
 | `--backend-apple-memory` | `WOODPECKER_BACKEND_APPLE_MEMORY` | `1G` (1 GiB) |
+| `--backend-apple-service-cpus` | `WOODPECKER_BACKEND_APPLE_SERVICE_CPUS` | `0` (inherit workload CPUs) |
+| `--backend-apple-service-memory` | `WOODPECKER_BACKEND_APPLE_SERVICE_MEMORY` | unset (inherit workload memory) |
+| `--backend-apple-workspace` | `WOODPECKER_BACKEND_APPLE_WORKSPACE` | `bind` |
 | `--backend-apple-startup-timeout` | `WOODPECKER_BACKEND_APPLE_STARTUP_TIMEOUT` | `5m` |
 | `--backend-apple-registry-mirrors` | `WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS` | unset (direct pulls) |
 
 CPU and memory limits apply to **each step VM**, not to the entire workflow.
+Service overrides apply only to Woodpecker `service` steps; clone, plugins and
+commands (including detached commands) retain workload limits. Leaving both
+overrides unset preserves the previous behavior. For an initial two-workflow
+trial on a 16 GiB host, start with 4 CPUs / 4G for workloads and 1 CPU / 1G for
+services, then measure actual memory pressure and job runtimes. Two workflows
+with one active workload and two services each have a combined 12 GiB VM memory
+limit, plus DNS helpers and macOS overhead; parallel workload steps add to this.
+These are per-VM limits, not a host-wide admission or memory reservation system.
+Increase `WOODPECKER_MAX_WORKFLOWS` only after validating representative load.
 Each workflow also uses one `coredns/coredns:1.14.7` VM with 1 CPU and 256 MiB.
+
+For a staged I/O trial, `WOODPECKER_BACKEND_APPLE_WORKSPACE=serial-volume`
+uses a private 32 GiB sparse ext4 volume only when every stage has at most one
+step and no step is a service or detached. Other workflows retain their shared
+host bind mount. Previous step cleanup must complete before another step can
+attach the volume; unexpected overlap is rejected rather than risking corruption.
+Clone/plugin/command steps share that workflow's volume sequentially. Plugin
+workdirs are prepared by an isolated Alpine helper. The ownership manifest records
+the volume and helper; cleanup verifies labels and deletes only owned resources.
+Failed cleanup retains the manifest for retry. Volumes are ephemeral workflow
+data, not persistent dependency caches. Revert to `bind` only after draining the
+agent; running workflows are never converted or copied. Services/parallel jobs
+do not receive an I/O speedup from this mode.
+
 The timeout covers workflow setup, image pulling, and individual step startup;
 running steps use Woodpecker's workflow timeout. The state directory must have
 mode `0700`; it is created privately when absent. Its path cannot contain comma,

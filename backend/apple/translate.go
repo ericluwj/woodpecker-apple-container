@@ -75,11 +75,12 @@ func validateStep(s *types.Step, conf *types.Config) error {
 }
 
 func (b *Backend) arguments(w *workflow, st *stepState, s *types.Step, image string) ([]string, error) {
+	cpus, memory := b.config.stepResources(s)
 	args := []string{"run", "--progress", "none", "--platform", "linux/arm64", "--name", st.name,
 		"--label", ownerLabel + "=" + w.owner, "--label", "io.woodpecker.apple.workflow=" + w.task,
-		"--cpus", fmt.Sprint(b.config.cpus), "--memory", b.config.memory,
+		"--cpus", fmt.Sprint(cpus), "--memory", memory,
 		"--network", w.network, "--dns", w.dnsIP,
-		"--mount", "type=bind,source=" + w.workspace + ",target=" + s.WorkspaceBase}
+		"--mount", workspaceMount(w, s.WorkspaceBase)}
 	env := make(map[string]string, len(s.Environment)+2)
 	for key, value := range s.Environment {
 		env[key] = value

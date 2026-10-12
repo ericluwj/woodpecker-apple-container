@@ -30,6 +30,7 @@ type workflow struct {
 	mu                                                   sync.Mutex
 	destroyMu                                            sync.Mutex
 	task, owner, dir, workspace, network, dnsName, dnsIP string
+	workspaceVolume, workspaceInit                       string
 	conf                                                 *types.Config
 	steps                                                map[string]*stepState
 	closing                                              bool
@@ -67,12 +68,14 @@ func (w *workflow) saveManifestLocked() error {
 		steps = append(steps, s.name)
 	}
 	data, err := json.MarshalIndent(struct {
-		Owner      string   `json:"owner"`
-		Workflow   string   `json:"workflow"`
-		Network    string   `json:"network"`
-		DNS        string   `json:"dns"`
-		Containers []string `json:"containers"`
-	}{w.owner, w.task, w.network, w.dnsName, steps}, "", "  ")
+		Owner           string   `json:"owner"`
+		Workflow        string   `json:"workflow"`
+		Network         string   `json:"network"`
+		DNS             string   `json:"dns"`
+		Containers      []string `json:"containers"`
+		WorkspaceVolume string   `json:"workspace_volume,omitempty"`
+		WorkspaceInit   string   `json:"workspace_init,omitempty"`
+	}{w.owner, w.task, w.network, w.dnsName, steps, w.workspaceVolume, w.workspaceInit}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -147,6 +150,10 @@ func (b *Backend) SetupWorkflow(ctx context.Context, conf *types.Config, task st
 		steps: make(map[string]*stepState), setupDone: make(chan struct{})}
 	w.network = resourceID(w.owner, "network")
 	w.dnsName = resourceID(w.owner, "dns")
+	if b.config.workspaceMode == "serial-volume" && serialWorkspace(conf) {
+		w.workspaceVolume = resourceID(w.owner, "workspace")
+		w.workspaceInit = resourceID(w.owner, "workspace-init")
+	}
 	b.workflows[task] = w
 	b.mu.Unlock()
 	defer func() {
@@ -167,6 +174,11 @@ func (b *Backend) SetupWorkflow(ctx context.Context, conf *types.Config, task st
 	}
 	startupCtx, cancel := context.WithTimeout(ctx, b.config.startupTimeout)
 	defer cancel()
+	if w.workspaceVolume != "" {
+		if _, err = b.runner.run(startupCtx, "volume", "create", "--label", ownerLabel+"="+w.owner, "--opt", "size=32g", w.workspaceVolume); err != nil {
+			return err
+		}
+	}
 	if _, err = b.runner.run(startupCtx, "network", "create", "--label", ownerLabel+"="+w.owner, w.network); err != nil {
 		return err
 	}
@@ -193,6 +205,18 @@ func (b *Backend) StartStep(ctx context.Context, step *types.Step, task string) 
 	if w.closing || w.steps[step.UUID] != nil {
 		w.mu.Unlock()
 		return fmt.Errorf("workflow is closing or step has already started")
+	}
+	if w.workspaceVolume != "" {
+		if step.Detached || step.Type == types.StepTypeService {
+			w.mu.Unlock()
+			return fmt.Errorf("serial workspace cannot start a service or detached step")
+		}
+		for _, previous := range w.steps {
+			if !previous.cleaned {
+				w.mu.Unlock()
+				return fmt.Errorf("serial workspace requires previous step cleanup before starting another")
+			}
+		}
 	}
 	lifetime, cancel := context.WithCancel(ctx)
 	s := &stepState{name: resourceID(w.owner, step.UUID), ctx: lifetime, cancel: cancel, startDone: make(chan struct{})}
@@ -241,14 +265,20 @@ func (b *Backend) StartStep(ctx context.Context, step *types.Step, task string) 
 			return relErr
 		}
 		if rel != ".." && !strings.HasPrefix(rel, "../") {
-			root, rootErr := os.OpenRoot(w.workspace)
-			if rootErr != nil {
-				return rootErr
-			}
-			err = root.MkdirAll(rel, 0755)
-			root.Close()
-			if err != nil {
-				return err
+			if w.workspaceVolume != "" {
+				if err = b.initVolumeWorkdir(lifetime, w, rel); err != nil {
+					return err
+				}
+			} else {
+				root, rootErr := os.OpenRoot(w.workspace)
+				if rootErr != nil {
+					return rootErr
+				}
+				err = root.MkdirAll(rel, 0755)
+				root.Close()
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -466,6 +496,14 @@ func (b *Backend) DestroyWorkflow(ctx context.Context, _ *types.Config, task str
 	}
 	if err = b.removeNetwork(ctx, w); err != nil {
 		return err
+	}
+	if w.workspaceVolume != "" {
+		if err = b.removeContainer(ctx, w, w.workspaceInit); err != nil {
+			return err
+		}
+		if err = b.removeWorkspaceVolume(ctx, w); err != nil {
+			return err
+		}
 	}
 	if err = os.RemoveAll(w.dir); err != nil {
 		return err

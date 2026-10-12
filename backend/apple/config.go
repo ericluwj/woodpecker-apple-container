@@ -24,6 +24,9 @@ const ownerLabel = "io.woodpecker.apple.owner"
 type config struct {
 	binary, stateDir, memory string
 	cpus                     int
+	serviceCPUs              int
+	serviceMemory            string
+	workspaceMode            string
 	startupTimeout           time.Duration
 	registryMirrorsJSON      string
 	registryMirrors          map[string]string
@@ -46,6 +49,9 @@ func (*Backend) Flags() []cli.Flag {
 		&cli.StringFlag{Name: "backend-apple-state-dir", Value: c.stateDir, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_STATE_DIR")},
 		&cli.IntFlag{Name: "backend-apple-cpus", Value: c.cpus, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_CPUS")},
 		&cli.StringFlag{Name: "backend-apple-memory", Value: c.memory, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_MEMORY")},
+		&cli.IntFlag{Name: "backend-apple-service-cpus", Usage: "CPUs per service VM; zero inherits workload CPUs", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_SERVICE_CPUS")},
+		&cli.StringFlag{Name: "backend-apple-service-memory", Usage: "Memory per service VM; unset inherits workload memory", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_SERVICE_MEMORY")},
+		&cli.StringFlag{Name: "backend-apple-workspace", Value: "bind", Usage: "bind or serial-volume (falls back to bind for services/parallel/detached steps)", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_WORKSPACE")},
 		&cli.DurationFlag{Name: "backend-apple-startup-timeout", Value: c.startupTimeout, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_STARTUP_TIMEOUT")},
 		&cli.StringFlag{Name: "backend-apple-registry-mirrors", Usage: "JSON object mapping source registry hosts to HTTPS cache hosts (automatic origin fallback)", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS")},
 	}
@@ -58,10 +64,38 @@ func configFromContext(ctx context.Context) config {
 		c.stateDir = cmd.String("backend-apple-state-dir")
 		c.cpus = cmd.Int("backend-apple-cpus")
 		c.memory = cmd.String("backend-apple-memory")
+		c.serviceCPUs = cmd.Int("backend-apple-service-cpus")
+		c.serviceMemory = cmd.String("backend-apple-service-memory")
+		c.workspaceMode = cmd.String("backend-apple-workspace")
 		c.startupTimeout = cmd.Duration("backend-apple-startup-timeout")
 		c.registryMirrorsJSON = cmd.String("backend-apple-registry-mirrors")
 	}
 	return c
+}
+
+func (c config) validateResources() error {
+	if c.workspaceMode != "" && c.workspaceMode != "bind" && c.workspaceMode != "serial-volume" {
+		return fmt.Errorf("invalid workspace mode")
+	}
+	validMemory := regexp.MustCompile(`^[1-9][0-9]*[KMGTP]?$`)
+	if c.cpus < 1 || !validMemory.MatchString(c.memory) || c.serviceCPUs < 0 ||
+		(c.serviceMemory != "" && !validMemory.MatchString(c.serviceMemory)) {
+		return fmt.Errorf("invalid workload or service CPU/memory configuration")
+	}
+	return nil
+}
+
+func (c config) stepResources(s *types.Step) (int, string) {
+	cpus, memory := c.cpus, c.memory
+	if s.Type == types.StepTypeService {
+		if c.serviceCPUs != 0 {
+			cpus = c.serviceCPUs
+		}
+		if c.serviceMemory != "" {
+			memory = c.serviceMemory
+		}
+	}
+	return cpus, memory
 }
 
 func checkPlatform(ctx context.Context) error {
@@ -118,8 +152,11 @@ func (b *Backend) Load(ctx context.Context) (*types.BackendInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.cpus < 1 || c.startupTimeout <= 0 || !regexp.MustCompile(`^[1-9][0-9]*[KMGTP]?$`).MatchString(c.memory) {
-		return nil, fmt.Errorf("invalid CPU, memory, or startup timeout configuration")
+	if err := c.validateResources(); err != nil {
+		return nil, err
+	}
+	if c.startupTimeout <= 0 {
+		return nil, fmt.Errorf("invalid startup timeout configuration")
 	}
 	root, err := filepath.Abs(c.stateDir)
 	if err != nil {

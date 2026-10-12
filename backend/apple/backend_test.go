@@ -22,6 +22,7 @@ type fakeRunner struct {
 	calls               [][]string
 	containers          map[string]containerInfo
 	networks            map[string]string
+	volumes             map[string]string
 	failDNS, failDelete bool
 }
 
@@ -62,6 +63,22 @@ func (f *fakeRunner) run(ctx context.Context, args ...string) ([]byte, error) {
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, append([]string(nil), args...))
 	switch args[0] {
+	case "volume":
+		if f.volumes == nil {
+			f.volumes = make(map[string]string)
+		}
+		switch args[1] {
+		case "create":
+			f.volumes[args[len(args)-1]] = label(args)
+		case "delete":
+			delete(f.volumes, args[len(args)-1])
+		case "list":
+			result := []map[string]any{}
+			for name, owner := range f.volumes {
+				result = append(result, map[string]any{"id": name, "configuration": map[string]any{"name": name, "labels": map[string]string{ownerLabel: owner}}})
+			}
+			return json.Marshal(result)
+		}
 	case "image":
 		if args[1] == "inspect" {
 			return []byte(`[{"variants":[{"platform":{"os":"linux","architecture":"arm64"}}]}]`), nil

@@ -211,10 +211,16 @@ func TestIntegrationLiveLogs(t *testing.T) {
 
 func TestIntegrationServicesAndConcurrentWorkflows(t *testing.T) {
 	b := integrationBackend(t)
+	b.config.workspaceMode = "serial-volume" // services must still share bind mounts
+	// Exercise the typed-service resource path with real VMs. Commands and
+	// DNS helpers retain their own limits; two workflows still resolve their
+	// own service aliases independently.
+	b.config.serviceCPUs, b.config.serviceMemory = 1, "1G"
 	var wg sync.WaitGroup
 	for _, task := range []string{"services-a", "services-b"} {
 		wg.Go(func() {
 			service := testStep("web", "busybox:1.37")
+			service.Type = types.StepTypeService
 			service.Detached = true
 			service.Commands = []string{"mkdir -p /www", "echo " + task + " > /www/index.html", "httpd -f -p 8080 -h /www"}
 			client := testStep("client", "alpine:3.22")
@@ -242,10 +248,40 @@ func TestIntegrationServicesAndConcurrentWorkflows(t *testing.T) {
 	wg.Wait()
 }
 
+func TestIntegrationSerialWorkspace(t *testing.T) {
+	b := integrationBackend(t)
+	b.config.workspaceMode = "serial-volume"
+	first := testStep("first", "alpine:3.22")
+	first.Commands = []string{"test \"$(stat -f -c %T /woodpecker)\" = ext2/ext3", "mkdir -p deps", "echo retained > deps/artifact", "ln -s deps/artifact link"}
+	plugin := testStep("plugin", "alpine:3.22")
+	plugin.Type = types.StepTypePlugin
+	plugin.Entrypoint = []string{"/bin/sh", "-c", "test \"$(cat link)\" = retained; echo plugin > second"}
+	last := testStep("last", "alpine:3.22")
+	last.Commands = []string{"test \"$(cat second)\" = plugin", "test \"$(cat link)\" = retained"}
+	if err := b.SetupWorkflow(t.Context(), serialConf(first, plugin, last), t.Name()); err != nil {
+		t.Fatal(err)
+	}
+	w, _ := b.getWorkflow(t.Name())
+	for _, s := range []*types.Step{first, plugin, last} {
+		out, state := integrationRun(t, b, t.Name(), s)
+		if state.ExitCode != 0 {
+			t.Fatalf("%s: %+v %s", s.Name, state, out)
+		}
+	}
+	if err := b.DestroyWorkflow(t.Context(), nil, t.Name()); err != nil {
+		t.Fatal(err)
+	}
+	// Cleanup is idempotent and does not touch the separately retained benchmark volume.
+	if err := b.removeWorkspaceVolume(t.Context(), w); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIntegrationCancellationAndTimeout(t *testing.T) {
 	for _, timeout := range []bool{false, true} {
 		t.Run(map[bool]string{false: "cancel", true: "startup-timeout"}[timeout], func(t *testing.T) {
 			b := integrationBackend(t)
+			b.config.workspaceMode = "serial-volume"
 			s := testStep("sleep", "alpine:3.22")
 			s.Commands = []string{"sleep 600"}
 			if err := b.SetupWorkflow(t.Context(), testConf(s), t.Name()); err != nil {
