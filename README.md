@@ -14,11 +14,21 @@ concurrent workflows can both use `postgres` without a name collision.
 ## Requirements and build
 
 - Apple silicon Mac, macOS 26 or newer.
-- Apple [`container`](https://github.com/apple/container) **1.5.0**. This initial
-  release checks that exact CLI version because it relies on its JSON shapes.
+- Apple [`container`](https://github.com/apple/container/releases/tag/1.6.1)
+  **1.6.1** (recommended). Legacy **1.5.0** remains accepted during upgrades.
+  Other versions are rejected because the backend relies on CLI and JSON shapes.
 - Go **1.27.0** or newer. Go's automatic toolchain download can supply 1.27.0
   when building with an older Go installation and `GOTOOLCHAIN=auto`.
 - A Woodpecker **3.19.0** server accessible over gRPC.
+
+The current stable targets are Woodpecker **3.19.0** and Apple container **1.6.1**
+(checked October 27, 2026). To upgrade an existing agent, drain its workflows,
+retain the prior binary and configuration, upgrade Apple container using its
+official installation instructions, then rebuild and restart the agent. Upgrade
+the server and agent together to Woodpecker 3.19.0. No backend state migration or
+global resource cleanup is required. To roll back the container upgrade, drain
+again and restore 1.5.0 with the prior agent binary and configuration; this does
+not promise compatibility of Apple's own runtime data across downgrades.
 
 ```sh
 make build

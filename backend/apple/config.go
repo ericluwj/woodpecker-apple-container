@@ -123,13 +123,23 @@ func checkCLI(ctx context.Context, c config) (runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !regexp.MustCompile(`\b1\.5\.0\b`).Match(out) {
-		return nil, fmt.Errorf("this release requires container CLI 1.5.0")
+	if !supportedCLIVersion(string(out)) {
+		return nil, fmt.Errorf("this release requires container CLI 1.6.1 or legacy 1.5.0")
 	}
 	if _, err := r.run(ctx, "list", "--all", "--format", "json"); err != nil {
 		return nil, fmt.Errorf("container service unavailable; run container system start as the agent user: %w", err)
 	}
 	return r, nil
+}
+
+// Match the CLI version field, never a build identifier or a prerelease suffix.
+// Keep the previous baseline available while administrators drain and upgrade.
+func supportedCLIVersion(output string) bool {
+	fields := strings.Fields(output)
+	if len(fields) < 4 || strings.Join(fields[:3], " ") != "container CLI version" {
+		return false
+	}
+	return fields[3] == "1.6.1" || fields[3] == "1.5.0"
 }
 
 func (*Backend) IsAvailable(ctx context.Context) bool {
