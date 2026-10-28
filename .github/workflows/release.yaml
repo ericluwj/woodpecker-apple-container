@@ -1,0 +1,72 @@
+name: Publish macOS ARM64 agent
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-agent-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify native platform
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(go env GOOS)/$(go env GOARCH)" = darwin/arm64
+      - name: Check formatting
+        run: test -z "$(gofmt -l backend cmd integration)"
+      - name: Test
+        run: make test
+      - name: Vet integration code
+        run: go vet -tags='integration test' ./...
+      - name: Build and verify agent
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+        run: |
+          make build
+          ./bin/woodpecker-agent-apple --version
+          file bin/woodpecker-agent-apple | grep 'Mach-O 64-bit executable arm64'
+      - name: Package release
+        run: |
+          mkdir -p dist
+          tar -czf dist/woodpecker-agent-apple-darwin-arm64.tar.gz -C bin woodpecker-agent-apple -C .. LICENSE README.md
+          cd dist
+          shasum -a 256 woodpecker-agent-apple-darwin-arm64.tar.gz > SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: woodpecker-agent-apple-darwin-arm64
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: woodpecker-agent-apple-darwin-arm64
+          path: dist
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" dist/woodpecker-agent-apple-darwin-arm64.tar.gz dist/SHA256SUMS --clobber

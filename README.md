@@ -41,6 +41,30 @@ installation. The backend only checks the service; it never starts it, changes
 global DNS, or installs anything automatically. Confirm the prerequisite with
 `container run --rm alpine:3.22 echo ready`.
 
+## Download a release
+
+Published [GitHub Releases](https://github.com/ericluwj/woodpecker-apple-container/releases)
+include `woodpecker-agent-apple-darwin-arm64.tar.gz` and `SHA256SUMS`. Download
+both into the same directory, then verify and extract:
+
+```sh
+shasum -a 256 -c SHA256SUMS
+tar -xzf woodpecker-agent-apple-darwin-arm64.tar.gz
+./woodpecker-agent-apple --version
+```
+
+The archive contains the native macOS ARM64 agent, README and MIT license.
+Go is needed only when building from source; the macOS, Apple container and
+Woodpecker server requirements above still apply. The binary is not Developer ID
+signed or notarized.
+
+The **Publish macOS ARM64 agent** GitHub Actions workflow tests and builds on
+macOS ARM64. Publishing a GitHub Release builds its tag and attaches the archive
+and checksum using `GITHUB_TOKEN`; no registry credentials are required. Manual
+runs via `workflow_dispatch` build the selected ref and upload workflow artifacts
+without creating or changing a Release. VM integration tests require a separately
+configured Apple container host and are not run by this workflow.
+
 ## Run the agent
 
 ```sh
