@@ -80,6 +80,42 @@ func integrationRun(t *testing.T, b *Backend, task string, s *types.Step) (strin
 	return string(data), state
 }
 
+// Opt-in host-local workflow: caller supplies site-specific resolver/name/IP.
+func TestIntegrationDNSUpstream(t *testing.T) {
+	server := os.Getenv("APPLE_CONTAINER_TEST_DNS_SERVER")
+	privateName := os.Getenv("APPLE_CONTAINER_TEST_PRIVATE_NAME")
+	privateIP := os.Getenv("APPLE_CONTAINER_TEST_PRIVATE_IP")
+	image := os.Getenv("APPLE_CONTAINER_TEST_RUNNER_IMAGE")
+	if server == "" || privateName == "" || privateIP == "" || image == "" {
+		t.Skip("set DNS_SERVER, PRIVATE_NAME, PRIVATE_IP and RUNNER_IMAGE test settings")
+	}
+	t.Setenv("WOODPECKER_BACKEND_APPLE_DNS_SERVERS", server)
+	b := integrationBackend(t)
+	if len(b.config.dnsServers) != 1 || b.config.dnsServers[0] != server {
+		t.Fatal("DNS resolver setting was not loaded from the agent CLI environment")
+	}
+	host, _ := os.Hostname()
+	t.Logf("host=%s helper_upstream=%s", host, server)
+	s := testStep("dns-client", image)
+	s.Environment = map[string]string{"PRIVATE_NAME": privateName, "PRIVATE_IP": privateIP}
+	s.Commands = []string{
+		`test "$(id -un)" = runner`,
+		`printf 'PRIVATE DNS: '; getent ahostsv4 "$PRIVATE_NAME" | tee /tmp/private-answer; grep -F "$PRIVATE_IP" /tmp/private-answer`,
+		`printf 'PUBLIC DNS: '; getent ahostsv4 example.com`,
+		`printf 'WORKFLOW ALIAS: '; getent ahostsv4 wp-dns-ready.invalid | grep 127.0.0.1`,
+		`curl --noproxy '*' --connect-timeout 5 --max-time 10 -sS -o /dev/null -w 'NETBIRD http=%{http_code} remote=%{remote_ip} tls=%{ssl_verify_result}\n' "https://$PRIVATE_NAME/api/user" > /tmp/https-result`,
+		`cat /tmp/https-result; grep -F "http=401 remote=$PRIVATE_IP tls=0" /tmp/https-result`,
+	}
+	if err := b.SetupWorkflow(t.Context(), testConf(s), t.Name()); err != nil {
+		t.Fatal(err)
+	}
+	out, state := integrationRun(t, b, t.Name(), s)
+	t.Log(out)
+	if state.ExitCode != 0 {
+		t.Fatalf("DNS workflow exited %d", state.ExitCode)
+	}
+}
+
 func TestIntegrationRegistryMirrors(t *testing.T) {
 	raw := os.Getenv("APPLE_CONTAINER_TEST_REGISTRY_MIRRORS")
 	if raw == "" {

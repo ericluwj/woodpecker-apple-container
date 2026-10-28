@@ -173,6 +173,15 @@ steps:
 Services are reachable by their names on the workflow network. DNS visibility
 is checked during startup; applications may still need a readiness/retry loop.
 External DNS queries are forwarded through the DNS helper's regular resolver.
+Administrators can opt out of vmnet's DNS proxy with
+`WOODPECKER_BACKEND_APPLE_DNS_SERVERS=100.84.255.254` (or
+`--backend-apple-dns-servers`), a comma-separated list of resolver IP addresses.
+Only the CoreDNS helper receives these upstream resolvers; workflow steps keep
+using CoreDNS for service aliases. Choose resolvers that preserve your split
+DNS zones and verify reachability from the helper network. Unset the option
+to retain the default vmnet resolver. This does not change host DNS, TLS, or
+application IP fallbacks. Existing workflows retain their current helper;
+the setting applies when new workflows are created after an agent restart.
 Parallel steps intentionally share a writable workspace, so the workflow must
 coordinate conflicting writes.
 

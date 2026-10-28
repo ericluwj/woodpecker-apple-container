@@ -30,6 +30,8 @@ type config struct {
 	startupTimeout           time.Duration
 	registryMirrorsJSON      string
 	registryMirrors          map[string]string
+	dnsServersRaw            string
+	dnsServers               []string
 }
 
 func defaultConfig() config {
@@ -54,6 +56,7 @@ func (*Backend) Flags() []cli.Flag {
 		&cli.StringFlag{Name: "backend-apple-workspace", Value: "bind", Usage: "bind or serial-volume (falls back to bind for services/parallel/detached steps)", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_WORKSPACE")},
 		&cli.DurationFlag{Name: "backend-apple-startup-timeout", Value: c.startupTimeout, Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_STARTUP_TIMEOUT")},
 		&cli.StringFlag{Name: "backend-apple-registry-mirrors", Usage: "JSON object mapping source registry hosts to HTTPS cache hosts (automatic origin fallback)", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS")},
+		&cli.StringFlag{Name: "backend-apple-dns-servers", Usage: "Comma-separated DNS server IPs for the workflow DNS helper; unset uses vmnet DNS", Sources: cli.EnvVars("WOODPECKER_BACKEND_APPLE_DNS_SERVERS")},
 	}
 }
 
@@ -69,6 +72,7 @@ func configFromContext(ctx context.Context) config {
 		c.workspaceMode = cmd.String("backend-apple-workspace")
 		c.startupTimeout = cmd.Duration("backend-apple-startup-timeout")
 		c.registryMirrorsJSON = cmd.String("backend-apple-registry-mirrors")
+		c.dnsServersRaw = cmd.String("backend-apple-dns-servers")
 	}
 	return c
 }
@@ -159,6 +163,10 @@ func (b *Backend) Load(ctx context.Context) (*types.BackendInfo, error) {
 	c := configFromContext(ctx)
 	var err error
 	c.registryMirrors, err = parseRegistryMirrors(c.registryMirrorsJSON)
+	if err != nil {
+		return nil, err
+	}
+	c.dnsServers, err = parseDNSServers(c.dnsServersRaw)
 	if err != nil {
 		return nil, err
 	}

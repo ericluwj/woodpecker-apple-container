@@ -10,6 +10,26 @@ import (
 	"time"
 )
 
+func parseDNSServers(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var servers []string
+	seen := make(map[string]bool)
+	for _, part := range strings.Split(raw, ",") {
+		ip := net.ParseIP(strings.TrimSpace(part))
+		if ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() {
+			return nil, fmt.Errorf("DNS servers must be non-loopback unicast IP addresses")
+		}
+		server := ip.String()
+		if !seen[server] {
+			servers = append(servers, server)
+			seen[server] = true
+		}
+	}
+	return servers, nil
+}
+
 func (b *Backend) setupDNS(ctx context.Context, w *workflow) error {
 	image, err := b.prepareImage(ctx, dnsImage, false)
 	if err != nil {
@@ -34,7 +54,11 @@ func (b *Backend) setupDNS(ctx context.Context, w *workflow) error {
 	}
 	args := []string{"run", "--progress", "none", "--platform", "linux/arm64", "--detach", "--name", w.dnsName,
 		"--label", ownerLabel + "=" + w.owner, "--network", w.network, "--cpus", "1", "--memory", "256M",
-		"--mount", "type=bind,source=" + filepath.Join(w.dir, "dns") + ",target=/config,readonly", image, "-conf", "/config/Corefile"}
+		"--mount", "type=bind,source=" + filepath.Join(w.dir, "dns") + ",target=/config,readonly"}
+	for _, server := range b.config.dnsServers {
+		args = append(args, "--dns", server)
+	}
+	args = append(args, image, "-conf", "/config/Corefile")
 	if _, err := b.runner.run(ctx, args...); err != nil {
 		return fmt.Errorf("start workflow DNS helper: %w", err)
 	}
