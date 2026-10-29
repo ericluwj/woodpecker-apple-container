@@ -4,7 +4,7 @@
 > development and evaluation. Do not rely on it for production CI workloads.
 
 A native macOS Woodpecker agent that executes **Linux ARM64** CI workloads in
-Apple container VMs. It embeds Woodpecker **3.19.0** and registers the backend
+Apple container VMs. It embeds Woodpecker **3.20.0** and registers the backend
 `apple-container` through the upstream custom-agent API.
 
 Each step has its own VM. Steps within a workflow share one workspace and one
@@ -19,16 +19,18 @@ concurrent workflows can both use `postgres` without a name collision.
   Other versions are rejected because the backend relies on CLI and JSON shapes.
 - Go **1.27.0** or newer. Go's automatic toolchain download can supply 1.27.0
   when building with an older Go installation and `GOTOOLCHAIN=auto`.
-- A Woodpecker **3.19.0** server accessible over gRPC.
+- A Woodpecker **3.20.0** server accessible over gRPC.
 
-The current stable targets are Woodpecker **3.19.0** and Apple container **1.6.1**
-(checked October 27, 2026). To upgrade an existing agent, drain its workflows,
-retain the prior binary and configuration, upgrade Apple container using its
-official installation instructions, then rebuild and restart the agent. Upgrade
-the server and agent together to Woodpecker 3.19.0. No backend state migration or
-global resource cleanup is required. To roll back the container upgrade, drain
-again and restore 1.5.0 with the prior agent binary and configuration; this does
-not promise compatibility of Apple's own runtime data across downgrades.
+The prepared upgrade targets are Woodpecker **3.20.0** and Apple container **1.6.1**
+(prepared October 29, 2026; not deployed). To upgrade an existing agent, drain
+its workflows,
+retain the prior binary and configuration, then rebuild and restart the agent.
+Keep the current Apple container runtime during the Woodpecker upgrade. Upgrade
+the server and agent together to Woodpecker 3.20.0. No backend state migration or
+global resource cleanup is required. For a Woodpecker rollback, drain again and
+restore the prior custom 3.19 agent binary while retaining Apple container 1.6.1
+and the host configuration. Server database rollback requires its own
+pre-upgrade snapshot; mixed-version operation has not been runtime-tested.
 
 ```sh
 make build
@@ -252,7 +254,7 @@ custom networks, and removes only its own resources. It covers clone â†’ build â
 plugin execution, shared files, fast exits and log draining, service names,
 external DNS, concurrent workflows, cancellation, and startup timeouts.
 
-The server test starts Woodpecker 3.19.0's real in-process gRPC server, scheduler,
+The server test starts Woodpecker 3.20.0's real in-process gRPC server, scheduler,
 and migrated SQLite store, with a mocked forge. It builds and launches the actual
 agent executable and checks registration, platform selection, successful and
 failed workloads, and final server-side workflow results. The extra `test` build
