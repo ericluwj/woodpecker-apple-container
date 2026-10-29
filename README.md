@@ -69,6 +69,36 @@ runs via `workflow_dispatch` build the selected ref and upload workflow artifact
 without creating or changing a Release. VM integration tests require a separately
 configured Apple container host and are not run by this workflow.
 
+## Versioning policy
+
+Future backend releases use independent semantic versions. The embedded
+Woodpecker version is pinned exactly and documented separately; a backend release
+number does not imply compatibility with the same-numbered Woodpecker server.
+Use the server version matching the release's embedded Woodpecker version unless
+another pairing has been explicitly tested and documented.
+
+For example (illustrative versions, not published releases):
+
+| Backend release | Embedded Woodpecker | Change |
+| --- | --- | --- |
+| `v1.0.0` | `3.20.0` | Initial release under this policy |
+| `v1.0.1` | `3.20.0` | Backward-compatible backend fix |
+| `v1.1.0` | `3.21.0` | Woodpecker upgrade |
+
+Increment the backend patch for backward-compatible fixes, minor for compatible
+features or Woodpecker upgrades, and major for incompatible backend changes.
+If an upstream upgrade requires incompatible backend configuration changes,
+increment the major version instead.
+
+Release titles and notes should identify both the backend and embedded
+Woodpecker versions. Future version output should expose both versions and the
+build commit; currently `--version` reports only the embedded Woodpecker version.
+List supported Apple container versions separately in each release's requirements.
+
+The existing `3.19.0` and `3.20.0` releases retain their original tags and assets.
+Never move a published tag or replace its binaries with a different build; publish
+a new backend version for subsequent changes.
+
 ## Run the agent
 
 ```sh
