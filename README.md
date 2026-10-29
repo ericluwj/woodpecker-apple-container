@@ -32,6 +32,12 @@ restore the prior custom 3.19 agent binary while retaining Apple container 1.6.1
 and the host configuration. Server database rollback requires its own
 pre-upgrade snapshot; mixed-version operation has not been runtime-tested.
 
+Woodpecker 3.20.0 has an upstream pipeline configuration compatibility change:
+backslashes outside `${...}` expressions are no longer unescaped during
+substitution. Review workflows that rely on that behavior before upgrading the
+server, especially quoted regular expressions. See the
+[3.20.0 release notes](https://github.com/woodpecker-ci/woodpecker/releases/tag/v3.20.0).
+
 ```sh
 make build
 container system start
