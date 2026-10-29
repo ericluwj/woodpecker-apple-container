@@ -1,8 +1,5 @@
 # Woodpecker agent for Apple containers
 
-> **Experimental — not production ready.** This project is intended for
-> development and evaluation. Do not rely on it for production CI workloads.
-
 A native macOS Woodpecker agent that executes **Linux ARM64** CI workloads in
 Apple container VMs. It embeds Woodpecker **3.20.0** and registers the backend
 `apple-container` through the upstream custom-agent API.
@@ -21,10 +18,9 @@ concurrent workflows can both use `postgres` without a name collision.
   when building with an older Go installation and `GOTOOLCHAIN=auto`.
 - A Woodpecker **3.20.0** server accessible over gRPC.
 
-The prepared upgrade targets are Woodpecker **3.20.0** and Apple container **1.6.1**
-(prepared October 29, 2026; not deployed). To upgrade an existing agent, drain
-its workflows,
-retain the prior binary and configuration, then rebuild and restart the agent.
+The supported targets are Woodpecker **3.20.0** and Apple container **1.6.1**.
+To upgrade an existing agent, drain its workflows, retain the prior binary and
+configuration, then rebuild and restart the agent.
 Keep the current Apple container runtime during the Woodpecker upgrade. Upgrade
 the server and agent together to Woodpecker 3.20.0. No backend state migration or
 global resource cleanup is required. For a Woodpecker rollback, drain again and
@@ -139,7 +135,7 @@ colon, or newline characters because Apple's mount syntax uses those delimiters.
 Administrators can opt into registry-host mappings without editing workflows:
 
 ```sh
-export WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS='{"docker.io":"registry-docker-io.pi-xcels.com","registry.k8s.io":"registry-k8s-io.pi-xcels.com","gcr.io":"registry-gcr-io.pi-xcels.com","ghcr.io":"registry-ghcr-io.pi-xcels.com"}'
+export WOODPECKER_BACKEND_APPLE_REGISTRY_MIRRORS='{"docker.io":"docker-cache.example.com","registry.k8s.io":"k8s-cache.example.com","gcr.io":"gcr-cache.example.com","ghcr.io":"ghcr-cache.example.com"}'
 ```
 
 The value is a JSON object of source registry hosts to cache hosts, optionally
@@ -148,7 +144,7 @@ normal HTTPS transport is used; this option does not enable insecure HTTP/TLS.
 The cache must expose the same repository paths as its source registry.
 
 The backend maps short Docker Hub names (`alpine:3.22` becomes
-`registry-docker-io.pi-xcels.com/library/alpine:3.22`), namespaced names and
+`docker-cache.example.com/library/alpine:3.22`), namespaced names and
 fully qualified references. Tags and digests are preserved. The same resolution
 applies to forced pulls, cached-image startup, clone/plugin/service steps and
 the backend's own CoreDNS helper. Workflows keep their logical image references;
@@ -206,8 +202,8 @@ Services are reachable by their names on the workflow network. DNS visibility
 is checked during startup; applications may still need a readiness/retry loop.
 External DNS queries are forwarded through the DNS helper's regular resolver.
 Administrators can opt out of vmnet's DNS proxy with
-`WOODPECKER_BACKEND_APPLE_DNS_SERVERS=100.84.255.254` (or
-`--backend-apple-dns-servers`), a comma-separated list of resolver IP addresses.
+`WOODPECKER_BACKEND_APPLE_DNS_SERVERS` (or `--backend-apple-dns-servers`),
+a comma-separated list of resolver IP addresses.
 Only the CoreDNS helper receives these upstream resolvers; workflow steps keep
 using CoreDNS for service aliases. Choose resolvers that preserve your split
 DNS zones and verify reachability from the helper network. Unset the option
@@ -216,6 +212,22 @@ application IP fallbacks. Existing workflows retain their current helper;
 the setting applies when new workflows are created after an agent restart.
 Parallel steps intentionally share a writable workspace, so the workflow must
 coordinate conflicting writes.
+
+### NetBird DNS
+
+If the agent host uses NetBird for private DNS, you can configure the workflow
+DNS helper to use its resolver:
+
+```sh
+export WOODPECKER_BACKEND_APPLE_DNS_SERVERS=100.84.255.254
+```
+
+Use the resolver address configured for your NetBird environment and verify that
+it is reachable from the workflow network. The resolver must answer the private
+zones and public names needed by your workloads. This setting only selects the
+helper's upstream resolver; NetBird connectivity and routing must already be
+configured on the host. Workflow service aliases continue to resolve through
+CoreDNS.
 
 ## Compatibility and isolation
 
@@ -278,7 +290,7 @@ global registry settings, supply the same opt-in mappings to the dedicated test:
 
 ```sh
 APPLE_CONTAINER_INTEGRATION=1 \
-APPLE_CONTAINER_TEST_REGISTRY_MIRRORS='{"docker.io":"registry-docker-io.pi-xcels.com"}' \
+APPLE_CONTAINER_TEST_REGISTRY_MIRRORS='{"docker.io":"docker-cache.example.com"}' \
 go test -race -tags=integration -timeout=10m \
   -run '^TestIntegrationRegistryMirrors$' -v ./backend/apple
 ```
