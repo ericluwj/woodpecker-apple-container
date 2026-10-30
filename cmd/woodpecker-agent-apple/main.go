@@ -12,7 +12,7 @@ import (
 
 func main() {
 	if version.Version == "" {
-		version.Version = "3.20.0"
+		version.Version = "3.20.1"
 	}
 	core.RunAgent(context.Background(), []types.Backend{apple.New()})
 }

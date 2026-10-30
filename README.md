@@ -1,7 +1,7 @@
 # Woodpecker agent for Apple containers
 
 A native macOS Woodpecker agent that executes **Linux ARM64** CI workloads in
-Apple container VMs. It embeds Woodpecker **3.20.0** and registers the backend
+Apple container VMs. It embeds Woodpecker **3.20.1** and registers the backend
 `apple-container` through the upstream custom-agent API.
 
 Each step has its own VM. Steps within a workflow share one workspace and one
@@ -16,23 +16,22 @@ concurrent workflows can both use `postgres` without a name collision.
   Other versions are rejected because the backend relies on CLI and JSON shapes.
 - Go **1.27.0** or newer. Go's automatic toolchain download can supply 1.27.0
   when building with an older Go installation and `GOTOOLCHAIN=auto`.
-- A Woodpecker **3.20.0** server accessible over gRPC.
+- A Woodpecker **3.20.1** server accessible over gRPC.
 
-The supported targets are Woodpecker **3.20.0** and Apple container **1.6.1**.
+The supported targets are Woodpecker **3.20.1** and Apple container **1.6.1**.
 To upgrade an existing agent, drain its workflows, retain the prior binary and
 configuration, then rebuild and restart the agent.
 Keep the current Apple container runtime during the Woodpecker upgrade. Upgrade
-the server and agent together to Woodpecker 3.20.0. No backend state migration or
+the server and agent together to Woodpecker 3.20.1. No backend state migration or
 global resource cleanup is required. For a Woodpecker rollback, drain again and
-restore the prior custom 3.19 agent binary while retaining Apple container 1.6.1
+restore the prior custom agent binary while retaining Apple container 1.6.1
 and the host configuration. Server database rollback requires its own
 pre-upgrade snapshot; mixed-version operation has not been runtime-tested.
 
-Woodpecker 3.20.0 has an upstream pipeline configuration compatibility change:
-backslashes outside `${...}` expressions are no longer unescaped during
-substitution. Review workflows that rely on that behavior before upgrading the
-server, especially quoted regular expressions. See the
-[3.20.0 release notes](https://github.com/woodpecker-ci/woodpecker/releases/tag/v3.20.0).
+Woodpecker 3.20.1 restores the previous environment substitution behavior,
+reverting the pipeline backslash handling change introduced in 3.20.0. Review
+workflows adjusted specifically for 3.20.0 when upgrading. See the
+[3.20.1 release notes](https://github.com/woodpecker-ci/woodpecker/releases/tag/v3.20.1).
 
 ```sh
 make build
@@ -81,11 +80,13 @@ Woodpecker version, rather than the backend revision.
 | `3.19.0-latest` | Moving alias for the highest successful 3.19.0 revision |
 | `3.20.0-1`, `3.20.0-2` | Immutable backend revisions for Woodpecker 3.20.0 |
 | `3.20.0-latest` | Moving alias for the highest successful 3.20.0 revision |
+| `3.20.1-1`, `3.20.1-2` | Immutable backend revisions for Woodpecker 3.20.1 |
+| `3.20.1-latest` | Moving alias for the highest successful 3.20.1 revision |
 
 Start revisions at 1 for each Woodpecker version and increment them for every
 new backend release. The workflow checks that the release's Woodpecker version
 matches `go.mod`. Numbered tags and their uploaded binaries are never replaced.
-The existing `3.19.0` and `3.20.0` releases keep their original tags and assets.
+Existing numbered releases keep their original tags and assets.
 
 After a numbered release has built, passed tests and published both assets, the
 workflow updates that version's `-latest` Git tag to the same commit and copies
@@ -104,7 +105,7 @@ selected workflow ref. For example:
 
 ```sh
 gh workflow run release.yaml --ref main \
-  -f release_tag=3.20.0-1 -f source_ref=SOURCE_COMMIT
+  -f release_tag=3.20.1-1 -f source_ref=SOURCE_COMMIT
 ```
 
 This also supports the 3.19.0 line: choose a source commit pinned to Woodpecker
@@ -123,8 +124,8 @@ replacing immutable assets.
 Rolling download URLs keep the version line in the path, for example:
 
 ```text
-https://github.com/ericluwj/woodpecker-apple-container/releases/download/3.20.0-latest/woodpecker-agent-apple-darwin-arm64.tar.gz
-https://github.com/ericluwj/woodpecker-apple-container/releases/download/3.20.0-latest/SHA256SUMS
+https://github.com/ericluwj/woodpecker-apple-container/releases/download/3.20.1-latest/woodpecker-agent-apple-darwin-arm64.tar.gz
+https://github.com/ericluwj/woodpecker-apple-container/releases/download/3.20.1-latest/SHA256SUMS
 ```
 
 ## Run the agent
@@ -330,7 +331,7 @@ custom networks, and removes only its own resources. It covers clone â†’ build â
 plugin execution, shared files, fast exits and log draining, service names,
 external DNS, concurrent workflows, cancellation, and startup timeouts.
 
-The server test starts Woodpecker 3.20.0's real in-process gRPC server, scheduler,
+The server test starts Woodpecker 3.20.1's real in-process gRPC server, scheduler,
 and migrated SQLite store, with a mocked forge. It builds and launches the actual
 agent executable and checks registration, platform selection, successful and
 failed workloads, and final server-side workflow results. The extra `test` build
