@@ -65,6 +65,15 @@ The **Publish macOS ARM64 agent** GitHub Actions workflow tests and builds on
 macOS ARM64. It uses `GITHUB_TOKEN`; no registry credentials are required.
 VM integration tests require a separately configured Apple container host and
 are not run by this workflow.
+Publishing is performed exclusively by GitHub Actions, never from a local shell.
+The workflow defaults to `GITHUB_TOKEN` with `contents: write`. If repository tag
+rules or historical workflow-bearing commits require additional permissions,
+an administrator can provide a repository-scoped `RELEASE_TOKEN` secret with
+Contents write and, when required, Workflows write access. The workflow uses it
+instead of `GITHUB_TOKEN`; permission errors fail promptly rather than falling
+back to local publishing. The script addresses drafts and assets by their API
+IDs and retries temporary visibility failures without recreating resources.
+
 
 ## Versioning policy
 

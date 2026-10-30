@@ -104,7 +104,7 @@ jobs:
         run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: Publish immutable revision and refresh version alias
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
           SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
