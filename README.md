@@ -63,41 +63,69 @@ Woodpecker server requirements above still apply. The binary is not Developer ID
 signed or notarized.
 
 The **Publish macOS ARM64 agent** GitHub Actions workflow tests and builds on
-macOS ARM64. Publishing a GitHub Release builds its tag and attaches the archive
-and checksum using `GITHUB_TOKEN`; no registry credentials are required. Manual
-runs via `workflow_dispatch` build the selected ref and upload workflow artifacts
-without creating or changing a Release. VM integration tests require a separately
-configured Apple container host and are not run by this workflow.
+macOS ARM64. It uses `GITHUB_TOKEN`; no registry credentials are required.
+VM integration tests require a separately configured Apple container host and
+are not run by this workflow.
 
 ## Versioning policy
 
-Future backend releases use independent semantic versions. The embedded
-Woodpecker version is pinned exactly and documented separately; a backend release
-number does not imply compatibility with the same-numbered Woodpecker server.
-Use the server version matching the release's embedded Woodpecker version unless
-another pairing has been explicitly tested and documented.
+Release names identify the exact embedded Woodpecker version and a backend
+revision. Use a matching Woodpecker server unless another pairing has been
+explicitly tested and documented. List Apple container compatibility separately
+in the release requirements. Currently `--version` reports the embedded
+Woodpecker version, rather than the backend revision.
 
-For example (illustrative versions, not published releases):
+| Release tag | Meaning |
+| --- | --- |
+| `3.19.0-1`, `3.19.0-2` | Immutable backend revisions for Woodpecker 3.19.0 |
+| `3.19.0-latest` | Moving alias for the highest successful 3.19.0 revision |
+| `3.20.0-1`, `3.20.0-2` | Immutable backend revisions for Woodpecker 3.20.0 |
+| `3.20.0-latest` | Moving alias for the highest successful 3.20.0 revision |
 
-| Backend release | Embedded Woodpecker | Change |
-| --- | --- | --- |
-| `v1.0.0` | `3.20.0` | Initial release under this policy |
-| `v1.0.1` | `3.20.0` | Backward-compatible backend fix |
-| `v1.1.0` | `3.21.0` | Woodpecker upgrade |
+Start revisions at 1 for each Woodpecker version and increment them for every
+new backend release. The workflow checks that the release's Woodpecker version
+matches `go.mod`. Numbered tags and their uploaded binaries are never replaced.
+The existing `3.19.0` and `3.20.0` releases keep their original tags and assets.
 
-Increment the backend patch for backward-compatible fixes, minor for compatible
-features or Woodpecker upgrades, and major for incompatible backend changes.
-If an upstream upgrade requires incompatible backend configuration changes,
-increment the major version instead.
+After a numbered release has built, passed tests and published both assets, the
+workflow updates that version's `-latest` Git tag to the same commit and copies
+the immutable release's archive and checksum to the alias Release. An older
+revision finishing late cannot move the alias backward. Each Woodpecker version
+has its own alias; GitHub's repository-wide “Latest release” badge is separate.
+Alias updates are not atomic across the tag and two files: retry downloads if a
+checksum check fails during an update. Pin a numbered revision and verify its
+checksum for reproducible deployments.
 
-Release titles and notes should identify both the backend and embedded
-Woodpecker versions. Future version output should expose both versions and the
-build commit; currently `--version` reports only the embedded Woodpecker version.
-List supported Apple container versions separately in each release's requirements.
+### Publishing
 
-The existing `3.19.0` and `3.20.0` releases retain their original tags and assets.
-Never move a published tag or replace its binaries with a different build; publish
-a new backend version for subsequent changes.
+Run the workflow from `main` with `release_tag` set to a new numbered revision.
+Set `source_ref` to the exact source commit or tag; leave it empty to build the
+selected workflow ref. For example:
+
+```sh
+gh workflow run release.yaml --ref main \
+  -f release_tag=3.20.0-1 -f source_ref=SOURCE_COMMIT
+```
+
+This also supports the 3.19.0 line: choose a source commit pinned to Woodpecker
+3.19.0 and a tag such as `3.19.0-1`. Keep the publishing workflow on `main` when
+building historical commits, since their original workflows may predate this
+policy. Leave `release_tag` empty for a build-only run with downloadable Actions
+artifacts and no Release changes.
+
+Publishing a numbered GitHub Release also triggers a build using its tag when
+that commit contains this workflow. Do not publish `-latest` manually: it is
+managed by the workflow and its release events are skipped. Reruns can resume
+partial uploads only if existing numbered assets are byte-for-byte identical;
+otherwise use a new revision. A failed alias update can be retried without
+replacing immutable assets.
+
+Rolling download URLs keep the version line in the path, for example:
+
+```text
+https://github.com/ericluwj/woodpecker-apple-container/releases/download/3.20.0-latest/woodpecker-agent-apple-darwin-arm64.tar.gz
+https://github.com/ericluwj/woodpecker-apple-container/releases/download/3.20.0-latest/SHA256SUMS
+```
 
 ## Run the agent
 

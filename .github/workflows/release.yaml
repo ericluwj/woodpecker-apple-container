@@ -4,6 +4,15 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Immutable revision (e.g. 3.20.0-1); leave empty for build-only'
+        type: string
+        required: false
+      source_ref:
+        description: 'Source commit or tag; leave empty for the selected workflow ref'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -14,10 +23,29 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'release' || !endsWith(github.event.release.tag_name, '-latest')
+    outputs:
+      release_tag: ${{ steps.source.outputs.release_tag }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
     runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+      - name: Validate release version and source
+        id: source
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+        run: |
+          if [ -n "$RELEASE_TAG" ]; then
+            [[ "$RELEASE_TAG" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([1-9][0-9]*)$ ]] || { echo 'Expected a numbered revision, e.g. 3.20.0-1'; exit 1; }
+            expected="${BASH_REMATCH[1]}"
+            actual=$(awk '$1 == "go.woodpecker-ci.org/woodpecker/v3" { sub(/^v/, "", $2); print $2 }' go.mod)
+            test "$expected" = "$actual" || { echo 'Release version does not match the pinned Woodpecker dependency'; exit 1; }
+          fi
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -54,19 +82,30 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event_name == 'release'
+    if: needs.build.outputs.release_tag != ''
     needs: build
+    concurrency:
+      group: publish-versioned-agent-release
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          # Publishing logic comes from the workflow revision, even when building
+          # a historical source ref for an older Woodpecker version line.
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@v4
         with:
           name: woodpecker-agent-apple-darwin-arm64
           path: dist
-      - name: Upload release assets
+      - name: Test release publishing policy
+        run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
+      - name: Publish immutable revision and refresh version alias
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" dist/woodpecker-agent-apple-darwin-arm64.tar.gz dist/SHA256SUMS --clobber
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+        run: python3 .github/scripts/publish-release.py
